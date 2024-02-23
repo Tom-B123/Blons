@@ -1,10 +1,23 @@
 use macroquad::prelude::*;
 
-fn simple_path(speed: f32, time: f32) -> (f32, f32) {
+fn pythag(a: (f32,f32)) -> f32 {
+    return (
+        a.0 * a.0 +
+        a.1 * a.1
+    ).sqrt();
+}
+
+fn angle_between(a: (f32,f32), b: (f32,f32)) -> f32 {
+
+    return (a.0 * a.1 + b.0 * b.1) /
+    (pythag(a) * pythag(b));
+}
+
+fn simple_track(speed: f32, time: f32) -> (f32, f32) {
     return (speed * time, 100.0);
 }
 
-fn circle_path(speed: f32, time: f32) -> (f32, f32) {
+fn circle_track(speed: f32, time: f32) -> (f32, f32) {
     let radius: f32 = 100.0;
     let ox: f32 = 150.0;
     let oy: f32 = 150.0;
@@ -17,6 +30,36 @@ fn target_first(pos: (f32,f32), enemies: Vec<Enemy>) -> Option<Enemy>{
 
 fn place_any(pos: (f32,f32), radius: f32, towers: Vec<Tower>) -> bool {
     return true;
+}
+
+struct Projectile_path {
+    cos_angle: f32,
+    sin_angle: f32,
+    update_foo: fn(f32,f32,f32,f32) -> (f32,f32),
+}
+
+impl Projectile_path {
+    fn projectile_straight (source: (f32,f32), target: (f32,f32),) -> Projectile_path {
+        let angle: f32 = angle_between(source, target);
+        let cos_angle: f32 = angle.cos();
+        let sin_angle: f32 = angle.sin();
+        fn foo(cos_angle: f32, sin_angle: f32, speed: f32, time: f32) -> (f32,f32) {
+            let distance:f32 = speed * time;
+            let dx: f32 = distance * cos_angle;
+            let dy: f32 = distance * sin_angle;
+            return (dx,dy);
+        }
+        return Projectile_path {
+            cos_angle: cos_angle,
+            sin_angle: sin_angle,
+            update_foo: foo,
+        }
+    }
+    fn update(&self, speed: f32, time: f32) -> (f32,f32) {
+        let foo = self.update_foo;
+        let (x,y) = foo(self.sin_angle,self.cos_angle,speed,time);
+        return (x,y);
+    }
 }
 
 struct Tri {
@@ -100,6 +143,12 @@ impl Player {
         for i in self.enemies.iter_mut() {
             i.update(dt,self.path);
         }
+        for i in self.towers.iter_mut() {
+            i.update(dt);
+        }
+        for i in self.projectiles.iter_mut() {
+            i.update(dt);
+        }
     }
     fn on_tick(&mut self) {
         self.new_enemy(100);
@@ -121,6 +170,9 @@ impl Player {
             i.draw();
         }
         for i in self.towers.iter() {
+            i.draw();
+        }
+        for i in self.projectiles.iter() {
             i.draw();
         }
     }
@@ -176,12 +228,46 @@ impl Enemy {
 struct Projectile {
     x: f32,
     y: f32,
-    path: Option<fn()>,
-    radius: f32,
+    source: (f32,f32),
+    target: (f32,f32),
+    time: f32,
+    speed: f32,
+    path: Projectile_path,
     pierce: u32,
     damage: u32,
+    tri: Tri,
+    radius: f32,
 }
+impl Projectile {
+    fn new(source: (f32,f32), target: (f32,f32), speed: f32, pierce: u32, damage: u32, radius: f32) -> Projectile {
+        
+        let projectile_path: Projectile_path = Projectile_path::projectile_straight(source, target);
+        let tri = Tri::new(source.0,source.1,YELLOW);
+        return Projectile {
+            x: source.0,
+            y: source.1,
+            source: source,
+            target: target,
+            time: 0.0,
+            speed: speed,
+            path: projectile_path,
+            pierce: pierce,
+            damage: damage,
+            tri: tri,
+            radius: radius,
+        }
+    }
+    fn update(&mut self,dt: f32) {
+        self.time += dt;
+        let (nx,ny) = self.path.update(self.speed, self.time);
+        self.tri.move_to(nx,ny);
+        (self.x,self.y) = (nx,ny);
 
+    }
+    fn draw(&self) {
+        self.tri.draw();
+    }
+}
 struct Tower {
     x: f32,
     y: f32,
@@ -203,6 +289,9 @@ impl Tower {
             radius: radius,
         }
     }
+    fn update(&mut self, dt: f32) {
+        
+    }
     fn draw(&self) {
         self.tri.draw()
     }
@@ -210,7 +299,7 @@ impl Tower {
 
 #[macroquad::main("Blons TD")]
 async fn main() {
-    let mut player: Player = Player::new(1,circle_path,target_first);
+    let mut player: Player = Player::new(1,circle_track,target_first);
     let mut dt: f32;
     let mut game_time: f64;
     let mut tick: f32 = 0.0;
