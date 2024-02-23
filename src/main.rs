@@ -139,12 +139,32 @@ impl Player {
         let n_tower = Tower::new(x,y,target,placement,radius);
         self.towers.push(n_tower);
     }
+    fn get_target(&self, x: f32, y: f32) -> Option<Enemy> {
+        let found = target_first((x,y), self.enemies);
+        return found;
+    }
+    fn shoot_enemy(&mut self, enemy: Enemy,source: (f32,f32)) {
+        let target = (enemy.x,enemy.y);
+        self.new_projectile(source,target,5.0,1,1,10.0);
+    }
+    fn new_projectile(&mut self, source: (f32,f32), target: (f32,f32), speed: f32, pierce: u32, damage: u32, radius: f32) {
+        let n_projectile = Projectile::new(source,target,speed,pierce,damage,radius);
+        self.projectiles.push(n_projectile);
+    }
     fn update(&mut self, dt: f32) {
         for i in self.enemies.iter_mut() {
             i.update(dt,self.path);
         }
         for i in self.towers.iter_mut() {
-            i.update(dt);
+            if i.update(dt) {
+                let target = self.get_target(i.x,i.y);
+                let source = (100.0,100.0);
+                match target {
+                    Some(enemy) => self.shoot_enemy(enemy, source),
+
+                    None => println!("no enemy to target"),
+                }
+            }
         }
         for i in self.projectiles.iter_mut() {
             i.update(dt);
@@ -275,6 +295,8 @@ struct Tower {
     placement: fn((f32,f32),f32,Vec<Tower>) -> bool,
     tri: Tri,
     radius: f32,
+    max_cooldown: f32,
+    cooldown: f32,
 }
 
 impl Tower {
@@ -287,10 +309,17 @@ impl Tower {
             placement: placement,
             tri: tri,
             radius: radius,
+            max_cooldown: 0.5,
+            cooldown: 0.5,
         }
     }
-    fn update(&mut self, dt: f32) {
-        
+    fn update(&mut self, dt: f32) -> bool {
+        self.cooldown -= dt;
+        if self.cooldown < 0.0 {
+            self.cooldown = self.max_cooldown;
+            return true;
+        }
+        return false;
     }
     fn draw(&self) {
         self.tri.draw()
@@ -321,7 +350,7 @@ async fn main() {
         player.update(dt);
 
         player.input();
-
+ 
         player.draw();
 
         next_frame().await
