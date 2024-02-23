@@ -11,6 +11,14 @@ fn circle_path(speed: f32, time: f32) -> (f32, f32) {
     return (ox + radius * (speed * time/radius).cos(), oy + radius * (speed * time / radius).sin());
 }
 
+fn target_first(pos: (f32,f32), enemies: Vec<Enemy>) -> Option<Enemy>{
+    return enemies.into_iter().nth(0);
+}
+
+fn place_any(pos: (f32,f32), radius: f32, towers: Vec<Tower>) -> bool {
+    return true;
+}
+
 struct Tri {
     pos1: Vec2,
     pos2: Vec2,
@@ -50,14 +58,16 @@ struct Player {
     health: u32,
     money: u32,
     path: fn(f32,f32) -> (f32,f32),
+    def_target: fn((f32,f32),Vec<Enemy>) -> Option<Enemy>,
     enemies: Vec<Enemy>,
     projectiles: Vec<Projectile>,
     towers: Vec<Tower>,
     difficulty: u32,
+    mouse_state: bool,
 }
 
 impl Player {
-    fn new(difficulty: u32, path: fn(f32, f32) -> (f32,f32)) -> Player {
+    fn new(difficulty: u32, path: fn(f32, f32) -> (f32,f32),def_target: fn((f32, f32),Vec<Enemy>) -> Option<Enemy>) -> Player {
         let mut n_health: u32 = 200 - difficulty * 50;
         if n_health < 1 {
             n_health = 1;
@@ -70,17 +80,19 @@ impl Player {
             health: n_health,
             money: n_money,
             path: path,
+            def_target: target_first,
             enemies: enemies,
             projectiles: projectiles,
             towers: towers,
             difficulty: difficulty,
+            mouse_state: false,
         }
     }
     fn new_enemy(&mut self, health: u32) {
         let n_enemy = Enemy::new(health);
         self.enemies.push(n_enemy);
     }
-    fn new_tower(&mut self, x: f32, y: f32, target: fn() -> Option<Enemy>, placement: fn() -> bool, radius: f32) {
+    fn new_tower(&mut self, x: f32, y: f32, target: fn((f32,f32),Vec<Enemy>) -> Option<Enemy>, placement: fn((f32,f32),f32,Vec<Tower>) -> bool, radius: f32) {
         let n_tower = Tower::new(x,y,target,placement,radius);
         self.towers.push(n_tower);
     }
@@ -92,8 +104,23 @@ impl Player {
     fn on_tick(&mut self) {
         self.new_enemy(100);
     }
+    fn input(&mut self) {
+        if is_mouse_button_down(MouseButton::Left) {
+            if self.mouse_state == false {
+                let (mx,my) = mouse_position();
+                self.new_tower(mx,my,target_first,place_any,15.0);
+            }
+            self.mouse_state = true;
+        }
+        else {
+            self.mouse_state = false;
+        }
+    }
     fn draw(&self) {
         for i in self.enemies.iter() {
+            i.draw();
+        }
+        for i in self.towers.iter() {
             i.draw();
         }
     }
@@ -158,26 +185,32 @@ struct Projectile {
 struct Tower {
     x: f32,
     y: f32,
-    target: fn() -> Option<Enemy>,
-    placement: fn() -> bool,
+    target: fn((f32,f32), Vec<Enemy>) -> Option<Enemy>,
+    placement: fn((f32,f32),f32,Vec<Tower>) -> bool,
+    tri: Tri,
     radius: f32,
 }
 
 impl Tower {
-    fn new(x: f32, y: f32, target: fn() -> Option<Enemy>, placement: fn() -> bool, radius: f32) -> Tower {
+    fn new(x: f32, y: f32, target: fn((f32,f32),Vec<Enemy>) -> Option<Enemy>, placement: fn((f32,f32),f32,Vec<Tower>) -> bool, radius: f32) -> Tower {
+        let tri = Tri::new(x,y,BLUE);
         return Tower {
             x: x,
             y: y,
             target: target,
             placement: placement,
+            tri: tri,
             radius: radius,
         }
+    }
+    fn draw(&self) {
+        self.tri.draw()
     }
 }
 
 #[macroquad::main("Blons TD")]
 async fn main() {
-    let mut player: Player = Player::new(1,circle_path);
+    let mut player: Player = Player::new(1,circle_path,target_first);
     let mut dt: f32;
     let mut game_time: f64;
     let mut tick: f32 = 0.0;
@@ -197,6 +230,8 @@ async fn main() {
         clear_background(BLACK);
 
         player.update(dt);
+
+        player.input();
 
         player.draw();
 
