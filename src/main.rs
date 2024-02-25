@@ -8,9 +8,16 @@ fn pythag(a: (f32,f32)) -> f32 {
 }
 
 fn angle_between(a: (f32,f32), b: (f32,f32)) -> f32 {
-
-    return (a.0 * a.1 + b.0 * b.1) /
-    (pythag(a) * pythag(b));
+    local ax,ay = math.abs(x),math.abs(y)
+    if x > 0 and y >= 0 then
+        return math.atan(ay/ax)
+    elseif x <= 0 and y > 0 then
+        return math.atan(ax/ay) + math.pi / 2
+    elseif x < 0 and y <= 0 then
+        return math.atan(ay/ax) + math.pi
+    elseif x >= 0 and y < 0 then
+        return math.atan(ax/ay) + math.pi * 3 / 2
+    end
 }
 
 fn simple_track(speed: f32, time: f32) -> (f32, f32) {
@@ -35,7 +42,8 @@ fn place_any(pos: (f32,f32), radius: f32, towers: Vec<Tower>) -> bool {
 struct Projectilepath {
     cos_angle: f32,
     sin_angle: f32,
-    update_foo: fn(f32,f32,f32,f32) -> (f32,f32),
+    source: (f32,f32),
+    update_foo: fn(f32,f32,f32,f32,(f32,f32)) -> (f32,f32),
 }
 
 impl Projectilepath {
@@ -43,21 +51,23 @@ impl Projectilepath {
         let angle: f32 = angle_between(source, target);
         let cos_angle: f32 = angle.cos();
         let sin_angle: f32 = angle.sin();
-        fn foo(cos_angle: f32, sin_angle: f32, speed: f32, time: f32) -> (f32,f32) {
+        println!("new path of angle {} between {},{} and {},{}",angle,source.0,source.1,target.0,target.1);
+        fn foo(cos_angle: f32, sin_angle: f32, speed: f32, time: f32, source: (f32,f32)) -> (f32,f32) {
             let distance:f32 = speed * time;
-            let dx: f32 = distance * cos_angle;
-            let dy: f32 = distance * sin_angle;
+            let dx: f32 = source.0 + distance * cos_angle;
+            let dy: f32 = source.1 + distance * sin_angle;
             return (dx,dy);
         }
         return Projectilepath {
             cos_angle: cos_angle,
             sin_angle: sin_angle,
+            source: source,
             update_foo: foo,
         }
     }
     fn update(&self, speed: f32, time: f32) -> (f32,f32) {
         let foo = self.update_foo;
-        let (x,y) = foo(self.sin_angle,self.cos_angle,speed,time);
+        let (x,y) = foo(self.sin_angle,self.cos_angle,speed,time,self.source);
         return (x,y);
     }
 }
@@ -131,19 +141,19 @@ impl Player {
             mouse_state: false,
         }
     }
-    fn new_enemy(&mut self, health: u32) {
+    fn newEnemy(&mut self, health: u32) {
         let n_enemy = Enemy::new(health);
         self.enemies.push(n_enemy);
     }
-    fn new_tower(&mut self, x: f32, y: f32, target: fn((f32,f32),Vec<Enemy>) -> Option<Enemy>, placement: fn((f32,f32),f32,Vec<Tower>) -> bool, radius: f32) {
+    fn newTower(&mut self, x: f32, y: f32, target: fn((f32,f32),Vec<Enemy>) -> Option<Enemy>, placement: fn((f32,f32),f32,Vec<Tower>) -> bool, radius: f32) {
         let n_tower = Tower::new(x,y,target,placement,radius);
         self.towers.push(n_tower);
     }
-    fn shoot_enemy(&mut self, enemy: Enemy,source: (f32,f32)) {
+    fn shootEnemy(&mut self, enemy: Enemy,source: (f32,f32)) {
         let target = (enemy.x,enemy.y);
-        self.new_projectile(source,target,5.0,1,1,10.0);
+        self.newProjectile(source,target,5.0,1,1,10.0);
     }
-    fn new_projectile(&mut self, source: (f32,f32), target: (f32,f32), speed: f32, pierce: u32, damage: u32, radius: f32) {
+    fn newProjectile(&mut self, source: (f32,f32), target: (f32,f32), speed: f32, pierce: u32, damage: u32, radius: f32) {
         let n_projectile = Projectile::new(source,target,speed,pierce,damage,radius);
         self.projectiles.push(n_projectile);
     }
@@ -162,13 +172,13 @@ impl Player {
         }
     }
     fn on_tick(&mut self) {
-        self.new_enemy(100);
+        self.newEnemy(100);
     }
     fn input(&mut self) {
         if is_mouse_button_down(MouseButton::Left) {
             if self.mouse_state == false {
                 let (mx,my) = mouse_position();
-                self.new_tower(mx,my,target_first,place_any,15.0);
+                self.newTower(mx,my,target_first,place_any,15.0);
             }
             self.mouse_state = true;
         }
@@ -319,6 +329,7 @@ impl Tower {
 #[macroquad::main("Blons TD")]
 async fn main() {
     let mut player: Player = Player::new(1,circle_track,target_first);
+    player.newProjectile((100.0,100.0),(200.0,100.0),10.0,5,5,10.0);
     let mut dt: f32;
     let mut game_time: f64;
     let mut tick: f32 = 0.0;
