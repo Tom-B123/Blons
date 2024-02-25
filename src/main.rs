@@ -32,14 +32,14 @@ fn place_any(pos: (f32,f32), radius: f32, towers: Vec<Tower>) -> bool {
     return true;
 }
 
-struct Projectile_path {
+struct Projectilepath {
     cos_angle: f32,
     sin_angle: f32,
     update_foo: fn(f32,f32,f32,f32) -> (f32,f32),
 }
 
-impl Projectile_path {
-    fn projectile_straight (source: (f32,f32), target: (f32,f32),) -> Projectile_path {
+impl Projectilepath {
+    fn projectile_straight (source: (f32,f32), target: (f32,f32),) -> Projectilepath {
         let angle: f32 = angle_between(source, target);
         let cos_angle: f32 = angle.cos();
         let sin_angle: f32 = angle.sin();
@@ -49,7 +49,7 @@ impl Projectile_path {
             let dy: f32 = distance * sin_angle;
             return (dx,dy);
         }
-        return Projectile_path {
+        return Projectilepath {
             cos_angle: cos_angle,
             sin_angle: sin_angle,
             update_foo: foo,
@@ -139,10 +139,6 @@ impl Player {
         let n_tower = Tower::new(x,y,target,placement,radius);
         self.towers.push(n_tower);
     }
-    fn get_target(&self, x: f32, y: f32) -> Option<Enemy> {
-        let found = target_first((x,y), self.enemies);
-        return found;
-    }
     fn shoot_enemy(&mut self, enemy: Enemy,source: (f32,f32)) {
         let target = (enemy.x,enemy.y);
         self.new_projectile(source,target,5.0,1,1,10.0);
@@ -152,22 +148,17 @@ impl Player {
         self.projectiles.push(n_projectile);
     }
     fn update(&mut self, dt: f32) {
-        for i in self.enemies.iter_mut() {
-            i.update(dt,self.path);
+        for enemy in &mut self.enemies {
+            enemy.update(dt,self.path);
         }
-        for i in self.towers.iter_mut() {
-            if i.update(dt) {
-                let target = self.get_target(i.x,i.y);
-                let source = (100.0,100.0);
-                match target {
-                    Some(enemy) => self.shoot_enemy(enemy, source),
 
-                    None => println!("no enemy to target"),
-                }
-            }
+        // let enemies_refs: Vec<&Enemy> = self.enemies.iter().collect();
+
+        for tower in &mut self.towers {
+            tower.update(dt);
         }
-        for i in self.projectiles.iter_mut() {
-            i.update(dt);
+        for projectile in &mut self.projectiles {
+            projectile.update(dt);
         }
     }
     fn on_tick(&mut self) {
@@ -252,7 +243,7 @@ struct Projectile {
     target: (f32,f32),
     time: f32,
     speed: f32,
-    path: Projectile_path,
+    path: Projectilepath,
     pierce: u32,
     damage: u32,
     tri: Tri,
@@ -261,7 +252,7 @@ struct Projectile {
 impl Projectile {
     fn new(source: (f32,f32), target: (f32,f32), speed: f32, pierce: u32, damage: u32, radius: f32) -> Projectile {
         
-        let projectile_path: Projectile_path = Projectile_path::projectile_straight(source, target);
+        let projectile_path: Projectilepath = Projectilepath::projectile_straight(source, target);
         let tri = Tri::new(source.0,source.1,YELLOW);
         return Projectile {
             x: source.0,
@@ -313,13 +304,12 @@ impl Tower {
             cooldown: 0.5,
         }
     }
-    fn update(&mut self, dt: f32) -> bool {
+    fn update(&mut self, dt: f32) {
         self.cooldown -= dt;
         if self.cooldown < 0.0 {
             self.cooldown = self.max_cooldown;
-            return true;
+            println!("shoot");
         }
-        return false;
     }
     fn draw(&self) {
         self.tri.draw()
