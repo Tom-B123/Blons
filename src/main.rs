@@ -159,6 +159,10 @@ impl Player {
         self.projectiles.push(n_projectile);
     }
 
+    fn remove_projectile(&mut self, pos: usize) {
+        self.projectiles.remove(pos);
+    }
+
     // Updates enemies, towers and projectiles
     fn update(&mut self, dt: f32) {
 
@@ -203,11 +207,19 @@ impl Player {
         for point in projectile_target {
             let source = point.0;
             let target = point.1;
-            self.new_projectile(source,target,50.0,5,5,5.0)
+            self.new_projectile(source,target,250.0,5,5,5.0)
         }
-        
+
+        let mut projectiles_to_remove: Vec<usize> = vec![];
+        let mut pos: usize = 0;
         for projectile in &mut self.projectiles {
-            projectile.update(dt);
+            if projectile.update(dt) {
+                projectiles_to_remove.push(pos);
+            }
+            pos += 1;
+        }
+        for pos in projectiles_to_remove {
+            self.remove_projectile(pos);
         }
     }
     fn on_tick(&mut self) {
@@ -291,6 +303,7 @@ struct Projectile {
     y: f32,
     source: (f32,f32),
     target: (f32,f32),
+    lifetime: f32,
     time: f32,
     speed: f32,
     path: Projectilepath,
@@ -301,7 +314,7 @@ struct Projectile {
 }
 impl Projectile {
     fn new(source: (f32,f32), target: (f32,f32), speed: f32, pierce: u32, damage: u32, radius: f32) -> Projectile {
-        
+        let lifetime: f32 = 0.5;
         let projectile_path: Projectilepath = Projectilepath::projectile_straight(source, target);
         let tri = Tri::new(source.0,source.1,YELLOW);
         return Projectile {
@@ -309,6 +322,7 @@ impl Projectile {
             y: source.1,
             source: source,
             target: target,
+            lifetime: lifetime,
             time: 0.0,
             speed: speed,
             path: projectile_path,
@@ -318,12 +332,18 @@ impl Projectile {
             radius: radius,
         }
     }
-    fn update(&mut self,dt: f32) {
+    fn equals(&self, other: &Projectile) -> bool {
+        return (self.x == other.x && self.y == other.y && self.target == other.target && self.source == other.source);
+    }
+    fn update(&mut self,dt: f32) -> bool {
         self.time += dt;
         let (nx,ny) = self.path.update(self.speed, self.time);
         self.tri.move_to(nx,ny);
         (self.x,self.y) = (nx,ny);
-
+        if self.time >= self.lifetime {
+            return true;
+        }
+        return false;
     }
     fn draw(&self) {
         self.tri.draw();
@@ -387,6 +407,7 @@ async fn main() {
     let mut game_time: f64;
     let mut tick: f32 = 0.0;
     let mut tick_time: f32 = 1.0;
+    player.on_tick();
     loop {
         dt = get_frame_time();
         tick += dt;
@@ -395,7 +416,7 @@ async fn main() {
         if tick > tick_time {
             tick -= tick_time;
             tick_time *= 0.9;
-            player.on_tick();
+            // player.on_tick();
         }
         
 
