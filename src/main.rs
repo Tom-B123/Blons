@@ -8,16 +8,18 @@ fn pythag(a: (f32,f32)) -> f32 {
 }
 
 fn angle_between(a: (f32,f32), b: (f32,f32)) -> f32 {
-    local ax,ay = math.abs(x),math.abs(y)
-    if x > 0 and y >= 0 then
-        return math.atan(ay/ax)
-    elseif x <= 0 and y > 0 then
-        return math.atan(ax/ay) + math.pi / 2
-    elseif x < 0 and y <= 0 then
-        return math.atan(ay/ax) + math.pi
-    elseif x >= 0 and y < 0 then
-        return math.atan(ax/ay) + math.pi * 3 / 2
-    end
+    let (x,y) = (b.0-a.0, b.1-a.1);
+    let (ax,ay) = (x.abs(),y.abs());
+    const pi: f32 = std::f32::consts::PI;
+    if x > 0.0 && y >= 0.0 {
+        return (ay/ax).atan();
+    } else if x <= 0.0 && y > 0.0 {
+        return (ax/ay).atan() + pi / 2.0;
+    } else if x < 0.0 && y <= 0.0 {
+        return (ay/ax).atan() + pi;
+    } else {
+        return (ax/ay).atan() + pi * 3.0 / 2.0;
+    }
 }
 
 fn simple_track(speed: f32, time: f32) -> (f32, f32) {
@@ -51,7 +53,6 @@ impl Projectilepath {
         let angle: f32 = angle_between(source, target);
         let cos_angle: f32 = angle.cos();
         let sin_angle: f32 = angle.sin();
-        println!("new path of angle {} between {},{} and {},{}",angle,source.0,source.1,target.0,target.1);
         fn foo(cos_angle: f32, sin_angle: f32, speed: f32, time: f32, source: (f32,f32)) -> (f32,f32) {
             let distance:f32 = speed * time;
             let dx: f32 = source.0 + distance * cos_angle;
@@ -67,7 +68,7 @@ impl Projectilepath {
     }
     fn update(&self, speed: f32, time: f32) -> (f32,f32) {
         let foo = self.update_foo;
-        let (x,y) = foo(self.sin_angle,self.cos_angle,speed,time,self.source);
+        let (x,y) = foo(self.cos_angle,self.sin_angle,speed,time,self.source);
         return (x,y);
     }
 }
