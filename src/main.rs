@@ -1,10 +1,15 @@
 use macroquad::prelude::*;
 
-fn pythag(a: (f32,f32)) -> f32 {
-    return (
-        a.0 * a.0 +
-        a.1 * a.1
-    ).sqrt();
+fn pythag(a: (f32,f32), b: (f32,f32)) -> f32 {
+    let x = a.0 - b.0;
+    let y = a.1 - b.1;
+    return x * x + y * y;
+}
+
+fn pythag_sqrt(a: (f32,f32), b: (f32,f32)) -> f32 {
+    let x = a.0 - b.0;
+    let y = a.1 - b.1;
+    return (x * x + y * y).sqrt();
 }
 
 fn angle_between(a: (f32,f32), b: (f32,f32)) -> f32 {
@@ -33,8 +38,25 @@ fn circle_track(speed: f32, time: f32) -> (f32, f32) {
     return (ox + radius * (speed * time/radius).cos(), oy + radius * (speed * time / radius).sin());
 }
 
-fn target_first(pos: (f32,f32), enemies: Vec<&Enemy>) -> Option<&Enemy>{
-    return enemies.into_iter().nth(0);
+fn target_first(pos: (f32,f32), enemies: Vec<&Enemy>, range: f32) -> Option<&Enemy>{
+    let mut furthest_dist: f32 = 0.0;
+    let mut within: Vec<&Enemy> = vec![];
+    for enemy in enemies {
+        let distance: f32 = pythag(pos, (enemy.x,enemy.y));
+        if distance < range * range {
+            within.push(enemy);
+        }
+    }
+    let mut target: Option<&Enemy> = None;
+    for enemy in within {
+        let distance = enemy.time * enemy.speed;
+        if distance > furthest_dist {
+            furthest_dist = distance;
+            target = Some(enemy);
+        }
+        
+    }
+    return target;
 }
 
 fn place_any(pos: (f32,f32), radius: f32, towers: Vec<Tower>) -> bool {
@@ -42,33 +64,53 @@ fn place_any(pos: (f32,f32), radius: f32, towers: Vec<Tower>) -> bool {
 }
 
 struct Projectilepath {
-    cos_angle: f32,
-    sin_angle: f32,
+    angle: f32,
     source: (f32,f32),
-    update_foo: fn(f32,f32,f32,f32,(f32,f32)) -> (f32,f32),
+    target: (f32,f32),
+    update_foo: fn(f32,f32,f32,(f32,f32), (f32,f32)) -> (f32,f32),
 }
 
 impl Projectilepath {
     fn projectile_straight (source: (f32,f32), target: (f32,f32),) -> Projectilepath {
         let angle: f32 = angle_between(source, target);
-        let cos_angle: f32 = angle.cos();
-        let sin_angle: f32 = angle.sin();
-        fn foo(cos_angle: f32, sin_angle: f32, speed: f32, time: f32, source: (f32,f32)) -> (f32,f32) {
+        
+        fn foo(angle: f32, speed: f32, time: f32, source: (f32,f32), target: (f32,f32)) -> (f32,f32) {
+            let cos_angle: f32 = angle.cos();
+            let sin_angle: f32 = angle.sin();
             let distance:f32 = speed * time;
             let dx: f32 = source.0 + distance * cos_angle;
             let dy: f32 = source.1 + distance * sin_angle;
             return (dx,dy);
         }
         return Projectilepath {
-            cos_angle: cos_angle,
-            sin_angle: sin_angle,
+            angle: angle,
             source: source,
+            target: target,
             update_foo: foo,
         }
     }
+    fn projectile_circle (source: (f32,f32), target: (f32,f32),) -> Projectilepath {
+        let angle: f32 = angle_between(source, target);
+        
+        fn foo(angle: f32, speed: f32, time: f32, source: (f32,f32), target: (f32,f32)) -> (f32,f32) {
+            const pi: f32 = std::f32::consts::PI;
+            let cos_angle: f32 = (angle + time * speed * pi / 120.0).cos();
+            let sin_angle: f32 = (angle + time * speed * pi / 120.0).sin();
+            let dx: f32 = target.0 + 35.0 * cos_angle;
+            let dy: f32 = target.1 + 35.0 * sin_angle;
+            return (dx,dy);
+        }
+        return Projectilepath {
+            angle: angle,
+            source: source,
+            target: target,
+            update_foo: foo,
+        }
+    }
+
     fn update(&self, speed: f32, time: f32) -> (f32,f32) {
         let foo = self.update_foo;
-        let (x,y) = foo(self.cos_angle,self.sin_angle,speed,time,self.source);
+        let (x,y) = foo(self.angle,speed,time,self.source, self.target);
         return (x,y);
     }
 }
@@ -112,7 +154,7 @@ struct Player {
     health: u32,
     money: u32,
     path: fn(f32,f32) -> (f32,f32),
-    def_target: fn((f32,f32),Vec<&Enemy>) -> Option<&Enemy>,
+    def_target: fn((f32,f32),Vec<&Enemy>, f32) -> Option<&Enemy>,
     enemies: Vec<Enemy>,
     projectiles: Vec<Projectile>,
     towers: Vec<Tower>,
@@ -121,7 +163,7 @@ struct Player {
 }
 
 impl Player {
-    fn new(difficulty: u32, path: fn(f32, f32) -> (f32,f32),def_target: fn((f32, f32),Vec<&Enemy>) -> Option<&Enemy>) -> Player {
+    fn new(difficulty: u32, path: fn(f32, f32) -> (f32,f32),def_target: fn((f32, f32),Vec<&Enemy>,f32) -> Option<&Enemy>) -> Player {
         let mut n_health: u32 = 200 - difficulty * 50;
         if n_health < 1 {
             n_health = 1;
@@ -146,7 +188,7 @@ impl Player {
         let n_enemy = Enemy::new(health);
         self.enemies.push(n_enemy);
     }
-    fn new_tower(&mut self, x: f32, y: f32, target: fn((f32,f32),Vec<&Enemy>) -> Option<&Enemy>, placement: fn((f32,f32),f32,Vec<Tower>) -> bool, radius: f32) {
+    fn new_tower(&mut self, x: f32, y: f32, target: fn((f32,f32),Vec<&Enemy>,f32) -> Option<&Enemy>, placement: fn((f32,f32),f32,Vec<Tower>) -> bool, radius: f32, range: f32) {
         let n_tower = Tower::new(x,y,target,placement,radius);
         self.towers.push(n_tower);
     }
@@ -160,7 +202,39 @@ impl Player {
     }
 
     fn remove_projectile(&mut self, pos: usize) {
+        if pos >= self.projectiles.len() { println!("proj pos: {}, should be < {}",pos, self.projectiles.len()); return; }
         self.projectiles.remove(pos);
+    }
+
+    fn remove_enemy(&mut self, pos: usize) {
+        if pos >= self.enemies.len() { println!("enemy pos: {}, should be < {}",pos, self.enemies.len()); return; }
+        self.enemies.remove(pos);
+    }
+
+    fn enemies_hit(&mut self) -> (Vec<usize>,Vec<usize>){
+        let mut enemy_pos: usize = 0;
+        let mut projectile_pos: usize = 0;
+        let mut enemies: Vec<(f32,f32)> = vec![];
+        let mut projectiles: Vec<(f32,f32)> = vec![];
+        let mut out: (Vec<usize>,Vec<usize>) = (vec![],vec![]);
+        for enemy in &self.enemies {
+            enemies.push((enemy.x,enemy.y));
+        }
+        for projectile in &self.projectiles {
+            projectiles.push((projectile.x,projectile.y));
+        }
+        for enemy in &enemies {
+            for projectile in &projectiles {
+                if pythag((enemy.0,enemy.1),(projectile.0,projectile.1)) < 100.0 {
+                    out.0.push(enemy_pos);
+                    out.1.push(projectile_pos);
+                }
+                projectile_pos += 1;
+            }
+            projectile_pos = 0;
+            enemy_pos += 1;
+        }
+        return out;
     }
 
     // Updates enemies, towers and projectiles
@@ -171,7 +245,6 @@ impl Player {
         // Update enemies
         for enemy in &mut self.enemies {
             enemy.update(dt,self.path);
-            
         }
 
         // Get enemies for processing projectile creation
@@ -179,28 +252,22 @@ impl Player {
             enemy_ref.push(enemy);
         }
 
-        // Holds the player position and a foo to get the target position
-        let mut projectile_to_make: Vec<((f32,f32),fn ((f32,f32), Vec<&Enemy>) -> Option<&Enemy>)> = vec![];
-
         // Holds the tower positions and enemy positions 
         let mut projectile_target: Vec<((f32,f32),(f32,f32))> = vec![];
+        
         // Update towers
         for tower in &mut self.towers {
             if tower.can_shoot(dt) {
                 let tower_pos = tower.get_pos();
                 let target_function = tower.get_target();
-                projectile_to_make.push((tower_pos,target_function));
-            }
-        }
-
-        // Get projectile targets
-        for point in projectile_to_make {
-            let tower_pos = point.0;
-            let foo = point.1;
-            let enemy = foo(tower_pos, enemy_ref.clone());
-            match enemy {
-                Some(target_enemy) => projectile_target.push((tower_pos,(target_enemy.x,target_enemy.y))),
-                None => {},
+                let enemy: Option<&Enemy> = target_function(tower_pos, enemy_ref.clone(), 100.0);
+                match enemy {
+                    Some(target_enemy) => {
+                        projectile_target.push((tower_pos,(target_enemy.x,target_enemy.y)));
+                        tower.reset_cooldown();
+                    },
+                    None => {},
+                }
             }
         }
 
@@ -212,14 +279,25 @@ impl Player {
 
         let mut projectiles_to_remove: Vec<usize> = vec![];
         let mut pos: usize = 0;
+
         for projectile in &mut self.projectiles {
             if projectile.update(dt) {
                 projectiles_to_remove.push(pos);
             }
             pos += 1;
         }
+
         for pos in projectiles_to_remove {
             self.remove_projectile(pos);
+        }
+
+        let hits: (Vec<usize>,Vec<usize>) = self.enemies_hit();
+
+        for enemy in hits.0 {
+            self.remove_enemy(enemy);
+        }
+        for projectile in hits.1 {
+            self.remove_projectile(projectile);
         }
     }
     fn on_tick(&mut self) {
@@ -229,7 +307,8 @@ impl Player {
         if is_mouse_button_down(MouseButton::Left) {
             if self.mouse_state == false {
                 let (mx,my) = mouse_position();
-                self.new_tower(mx,my,target_first,place_any,15.0);
+                let range: f32 = 100.0;
+                self.new_tower(mx,my,target_first,place_any,15.0, range);
             }
             self.mouse_state = true;
         }
@@ -333,7 +412,7 @@ impl Projectile {
         }
     }
     fn equals(&self, other: &Projectile) -> bool {
-        return (self.x == other.x && self.y == other.y && self.target == other.target && self.source == other.source);
+        return self.x == other.x && self.y == other.y && self.target == other.target && self.source == other.source;
     }
     fn update(&mut self,dt: f32) -> bool {
         self.time += dt;
@@ -352,7 +431,7 @@ impl Projectile {
 struct Tower {
     x: f32,
     y: f32,
-    target: fn((f32,f32), Vec<&Enemy>) -> Option<&Enemy>,
+    target: fn((f32,f32), Vec<&Enemy>,f32) -> Option<&Enemy>,
     placement: fn((f32,f32),f32,Vec<Tower>) -> bool,
     tri: Tri,
     radius: f32,
@@ -361,7 +440,7 @@ struct Tower {
 }
 
 impl Tower {
-    fn new(x: f32, y: f32, target: fn((f32,f32),Vec<&Enemy>) -> Option<&Enemy>, placement: fn((f32,f32),f32,Vec<Tower>) -> bool, radius: f32) -> Tower {
+    fn new(x: f32, y: f32, target: fn((f32,f32),Vec<&Enemy>,f32) -> Option<&Enemy>, placement: fn((f32,f32),f32,Vec<Tower>) -> bool, radius: f32) -> Tower {
         let tri = Tri::new(x,y,BLUE);
         return Tower {
             x: x,
@@ -379,10 +458,12 @@ impl Tower {
     fn can_shoot(&mut self, dt: f32) -> bool {
         self.cooldown -= dt;
         if self.cooldown < 0.0 {
-            self.cooldown = self.max_cooldown;
             return true;
         }
         return false;
+    }
+    fn reset_cooldown(&mut self) {
+        self.cooldown = self.max_cooldown;
     }
     // Returns the position of the tower
     fn get_pos(&self) -> (f32,f32) {
@@ -390,7 +471,7 @@ impl Tower {
     }
 
     // Returns the targetting function
-    fn get_target(&self) -> fn ((f32, f32),Vec<&Enemy>) -> Option<&Enemy> {
+    fn get_target(&self) -> fn ((f32, f32),Vec<&Enemy>, f32) -> Option<&Enemy> {
         return self.target;
     }
 
@@ -404,19 +485,18 @@ impl Tower {
 async fn main() {
     let mut player: Player = Player::new(1,circle_track,target_first);
     let mut dt: f32;
-    let mut game_time: f64;
+    let mut _game_time: f64;
     let mut tick: f32 = 0.0;
     let mut tick_time: f32 = 1.0;
-    player.on_tick();
     loop {
         dt = get_frame_time();
         tick += dt;
-        game_time = get_time();
+        _game_time = get_time();
 
         if tick > tick_time {
             tick -= tick_time;
-            tick_time *= 0.9;
-            // player.on_tick();
+            tick_time *= 0.95;
+            player.on_tick();
         }
         
 
