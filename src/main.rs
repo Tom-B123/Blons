@@ -3,12 +3,38 @@ use macroquad::prelude::*;
 const PI: f32 = std::f32::consts::PI;
 
 fn speed_from_health(health: u32) -> f32 {
+    let base_speed: f32 = 30.0;
     match health {
-        1 => return 100.0,
-        2 => return 200.0,
-        3..=10 => return 300.0,
-        11.. => return 400.0,
-        _ => return 0.0,
+        1 => return base_speed,
+        2 => return base_speed * 1.5,
+        3..=10 => return base_speed * 2.0,
+        11.. => return base_speed * 3.0,
+        _ => return base_speed,
+    }
+}
+
+fn colour_from_health(health: u32) -> Color {
+    let (red, blue, green, yellow, pink, white, black, grey, orange) = (
+        Color::new(255.0,0.0,0.0,255.0),
+        Color::new(0.0,0.0,255.0,255.0),
+        Color::new(0.0,0.255,0.0,255.0),
+        Color::new(255.0,255.0,0.0,255.0),
+        Color::new(255.0,200.0,200.0,255.0),
+        Color::new(255.0,255.0,255.0,255.0),
+        Color::new(20.0,20.0,20.0,255.0),
+        Color::new(100.0,100.0,100.0,255.0),
+        Color::new(255.0,150.0,0.0,255.0),
+    );
+    match health {
+        1 => return red,
+        2 => return blue,
+        3 => return green,
+        4 => return yellow,
+        5 => return pink,
+        6 => return white,
+        7 => return black,
+        8 => return grey,
+        _ => return orange,
     }
 }
 
@@ -39,15 +65,15 @@ fn angle_between(a: (f32,f32), b: (f32,f32)) -> f32 {
     }
 }
 
-fn simple_track(speed: f32, time: f32) -> (f32, f32) {
-    return (speed * time, 100.0);
+fn simple_track(speed: f32, distance: f32, dt: f32) -> (f32, f32) {
+    return (distance + speed * dt, 100.0);
 }
 
-fn circle_track(speed: f32, time: f32) -> (f32, f32) {
+fn circle_track(speed: f32, distance: f32, dt: f32) -> (f32, f32) {
     let radius: f32 = 100.0;
     let ox: f32 = 150.0;
     let oy: f32 = 150.0;
-    return (ox + radius * (speed * time/radius).cos(), oy + radius * (speed * time / radius).sin());
+    return (ox + radius * ((distance + speed * dt)/radius).cos(), oy + radius * ((distance + speed * dt) / radius).sin());
 }
 
 fn target_first(pos: (f32,f32), enemies: Vec<&Enemy>, range: f32) -> Option<&Enemy>{
@@ -61,7 +87,7 @@ fn target_first(pos: (f32,f32), enemies: Vec<&Enemy>, range: f32) -> Option<&Ene
     }
     let mut target: Option<&Enemy> = None;
     for enemy in within {
-        let distance = enemy.time * enemy.speed;
+        let distance = enemy.distance;
         if distance > furthest_dist {
             furthest_dist = distance;
             target = Some(enemy);
@@ -164,7 +190,7 @@ impl Tri {
 struct Player {
     health: u32,
     money: u32,
-    path: fn(f32,f32) -> (f32,f32),
+    path: fn(f32,f32, f32) -> (f32,f32),
     def_target: fn((f32,f32),Vec<&Enemy>, f32) -> Option<&Enemy>,
     enemies: Vec<Enemy>,
     projectiles: Vec<Projectile>,
@@ -174,7 +200,7 @@ struct Player {
 }
 
 impl Player {
-    fn new(difficulty: u32, path: fn(f32, f32) -> (f32,f32),def_target: fn((f32, f32),Vec<&Enemy>,f32) -> Option<&Enemy>) -> Player {
+    fn new(difficulty: u32, path: fn(f32, f32, f32) -> (f32,f32),def_target: fn((f32, f32),Vec<&Enemy>,f32) -> Option<&Enemy>) -> Player {
         let mut n_health: u32 = 200 - difficulty * 50;
         if n_health < 1 {
             n_health = 1;
@@ -321,6 +347,8 @@ impl Player {
         for enemy in hits.0 {
             if enemy.0 < self.enemies.len() {
                 self.enemies[enemy.0].health = enemy.1;
+                self.enemies[enemy.0].update_speed();
+                self.enemies[enemy.0].update_colour();
                 if enemy.1 <= 0 {
                     self.remove_enemy(enemy.0);
                 }
@@ -337,8 +365,8 @@ impl Player {
             }
         }
     }
-    fn on_tick(&mut self) {
-        self.new_enemy(1);
+    fn on_tick(&mut self, spawn_count: u32) {
+        self.new_enemy((spawn_count % 2) + 3);
     }
     fn input(&mut self) {
         if is_mouse_button_down(MouseButton::Left) {
@@ -371,7 +399,7 @@ struct Enemy {
     health: u32,
     reward: u32,
     speed: f32,
-    time: f32,
+    distance: f32,
     x: f32,
     y: f32,
     radius: f32,
@@ -382,36 +410,41 @@ impl Enemy {
     fn new(health: u32) -> Enemy {
         let reward: u32 = 1;
         let speed: f32 = speed_from_health(health);
-        let time: f32 = 0.0;
+        let distance: f32 = 0.0;
         let x: f32 = 0.0;
         let y: f32 = 0.0;
         let radius: f32 = 10.0 + (health as f32) * 2.0;
-        let tri: Tri = Tri::new(x,y,RED);
+        let tri: Tri = Tri::new(x,y,colour_from_health(health));
         return Enemy {
             health: health,
             reward: reward,
             speed: speed,
-            time: time,
+            distance: distance,
             x: x,
             y: y,
             radius: radius,
             tri: tri,
         };
     }
+    fn update_speed(&mut self) {
+        self.speed = speed_from_health(self.health);
+    }
+    fn update_colour(&mut self) {
+        self.tri.colour = colour_from_health(self.health)
+    }
     fn draw(&self) {
         self.tri.draw()
     }
-    fn path(&mut self, path: fn(f32, f32) -> (f32,f32)) {
-        let npos: (f32,f32) = path(self.speed, self.time);
-        
+    fn path(&mut self, path: fn(f32, f32, f32) -> (f32,f32), dt: f32) {
+        let npos: (f32,f32) = path(self.speed, self.distance, dt);
+        self.distance += self.speed * dt;
         // let offset: Vec2 = tup_to_vec2(npos) - Vec2::new(self.x,self.y);
 
         self.tri.move_to(npos.0, npos.1);
         (self.x,self.y) = npos
     }
-    fn update(&mut self, dt: f32, path: fn(f32, f32) -> (f32,f32)) {
-        self.time += dt;
-        self.path(path);
+    fn update(&mut self, dt: f32, path: fn(f32, f32, f32) -> (f32,f32)) {
+        self.path(path, dt);
     }
 }
 struct Projectile {
@@ -522,11 +555,12 @@ impl Tower {
 
 #[macroquad::main("Blons TD")]
 async fn main() {
-    let mut player: Player = Player::new(1,circle_track,target_first);
+    let mut player: Player = Player::new(1,simple_track,target_first);
     let mut dt: f32;
     let mut _game_time: f64;
     let mut tick: f32 = 0.0;
     let mut tick_time: f32 = 1.0;
+    let mut spawn_count: u32 = 0;
     loop {
         dt = get_frame_time();
         tick += dt;
@@ -534,8 +568,9 @@ async fn main() {
 
         if tick > tick_time {
             tick -= tick_time;
+            spawn_count += 1;
             tick_time *= 0.95;
-            player.on_tick();
+            player.on_tick(spawn_count);
         }
         
 
